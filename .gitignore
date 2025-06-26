@@ -22,3 +22,5 @@ target/
 *.tar.gz
 # Test files
 src/test/
+# macOS
+.DS_Store
