@@ -20,3 +20,5 @@ target/
 *.ear
 *.zip
 *.tar.gz
+# Test files
+src/test/
