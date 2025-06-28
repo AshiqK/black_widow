@@ -9,7 +9,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.util.List;
 
 @Slf4j
@@ -44,9 +43,6 @@ public class BlackWidowApplication {
 
 			} catch (IOException e) {
 				log.error("Error connecting to or parsing the URL: {}", e.getMessage());
-			} catch (URISyntaxException e) {
-				log.error("URL validation error: {}", e.getMessage());
-				log.info("Please provide a valid URL in the format: https://example.com");
 			}
 		};
 	}

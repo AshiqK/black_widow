@@ -3,6 +3,8 @@ package com.ashiq.blackwidow.service;
 import com.ashiq.blackwidow.model.ScrapedPage;
 import com.ashiq.blackwidow.util.DomainUtils;
 import com.ashiq.blackwidow.util.LinkUtils;
+import com.ashiq.blackwidow.validator.InputValidator;
+import com.ashiq.blackwidow.validator.InputValidator.ValidationResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,73 +25,67 @@ public class WebScraper {
 
     private final LinkUtils linkUtils;
     private final RobotsTxtService robotsTxtService;
+    private final InputValidator inputValidator;
 
-    /**
-     * Validates the URL format.
-     *
-     * @param url The URL to validate
-     * @throws URISyntaxException If the URL is malformed or has an invalid format
-     */
-    private void validateUrl(String url) throws URISyntaxException {
-        if (url == null || url.trim().isEmpty()) {
-            throw new URISyntaxException("", "URL cannot be null or empty. Please provide a valid URL (e.g., https://example.com)");
-        }
-
-        try {
-            java.net.URI uri = new java.net.URI(url);
-            String scheme = uri.getScheme();
-            String host = uri.getHost();
-
-            if (scheme == null || (!scheme.equals("http") && !scheme.equals("https"))) {
-                throw new URISyntaxException(url, "URL must start with 'http://' or 'https://'. Please provide a valid URL (e.g., https://example.com)");
-            }
-
-            if (host == null || host.isEmpty()) {
-                throw new URISyntaxException(url, "URL must contain a valid host name. Please provide a valid URL (e.g., https://example.com)");
-            }
-        } catch (URISyntaxException e) {
-            throw new URISyntaxException(url, "Invalid URL format. Please provide a valid URL (e.g., https://example.com): " + e.getMessage());
-        }
-    }
 
     /**
      * Scrapes a web page and returns links from the same domain.
      *
      * @param url   The URL to scrape
      * @return A ScrapedPage representing the scraped page and its links
-     * @throws IOException        If there's an error connecting to or parsing the URL
-     * @throws URISyntaxException If the URL is malformed
+     * @throws IOException If there's an error connecting to or parsing the URL
      */
-    public ScrapedPage scrape(String url) throws IOException, URISyntaxException {
+    public ScrapedPage scrape(String url) throws IOException {
         // Validate the URL format
-        validateUrl(url);
+        ValidationResult validationResult = inputValidator.validateUrl(url);
+        if (!validationResult.isValid()) {
+            log.error("URL validation failed: {}", validationResult.getErrorMessage());
+            return new ScrapedPage(url, List.of());
+        }
 
-        // Extract the domain and scheme from the URL
-        String domain = DomainUtils.extractDomain(url);
-        URI uri = new URI(url);
-        String scheme = uri.getScheme();
+        String domain;
+        String scheme;
+
+        try {
+            // Extract the domain and scheme from the URL
+            domain = DomainUtils.extractDomain(url);
+            URI uri = new URI(url);
+            scheme = uri.getScheme();
+        } catch (URISyntaxException e) {
+            log.error("Failed to parse URL: {}", e.getMessage());
+            return new ScrapedPage(url, List.of());
+        }
 
         log.info("Starting scrape of {}", url);
 
-        // Fetch robots.txt once at the start
-        RobotsTxt robotsTxt = robotsTxtService.getRobotsTxt(domain, scheme);
+        // Initialize robots.txt service for this domain
+        boolean robotsTxtInitialized = robotsTxtService.initialize(domain, scheme);
+        if (!robotsTxtInitialized) {
+            log.warn("Robots.txt could not be properly initialized for {}. Will proceed with scraping but some URLs might be disallowed by the site owner.", domain);
+        }
 
         // Check if the URL is allowed by robots.txt
-        if (!robotsTxtService.isAllowedByRobotsTxt(url, robotsTxt)) {
+        if (!robotsTxtService.isAllowed(url, domain, scheme)) {
             log.warn("URL {} is disallowed by robots.txt. Skipping.", url);
             return new ScrapedPage(url, List.of());
         }
 
         // Respect crawl delay
-        robotsTxtService.respectCrawlDelay(domain, robotsTxt);
+        robotsTxtService.respectCrawlDelay(domain, scheme);
 
         // Get all links from the page that match the domain
-        List<String> links = linkUtils.getLinksFromSameDomain(
-            url, 
-            domain, 
-            robotsTxtService.getSitemapUrls(domain), 
-            linkUrl -> robotsTxtService.isAllowedByRobotsTxt(linkUrl, robotsTxt)
-        );
+        List<String> links;
+        try {
+            links = linkUtils.getLinksFromSameDomain(
+                url, 
+                domain, 
+                robotsTxtService.getSitemapUrls(domain), 
+                linkUrl -> robotsTxtService.isAllowed(linkUrl, domain, scheme)
+            );
+        } catch (URISyntaxException e) {
+            log.error("Failed to extract links: {}", e.getMessage());
+            return new ScrapedPage(url, List.of());
+        }
 
         // Create a list of ScrapedPage objects for the links
         List<ScrapedPage> scrapedLinks = new ArrayList<>();

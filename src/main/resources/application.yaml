@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: black-widow
+
+# Web scraper configuration
+scraper:
+  user-agent: BlackWidow/1.0 (+https://github.com/yourusername/black-widow)
+  timeout: 10000
+  follow-redirects: true

@@ -1,16 +1,18 @@
 package com.ashiq.blackwidow.service;
 
 import com.ashiq.blackwidow.config.ScraperConfig;
+import crawlercommons.sitemaps.AbstractSiteMap;
+import crawlercommons.sitemaps.SiteMap;
+import crawlercommons.sitemaps.SiteMapIndex;
+import crawlercommons.sitemaps.SiteMapParser;
+import crawlercommons.sitemaps.SiteMapURL;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -28,61 +30,108 @@ public class RobotsTxtService {
     private final JsoupService jsoupService;
     private final ScraperConfig config;
 
-    // Cache for robots.txt rules to avoid fetching them multiple times
-    private final Map<String, RobotsTxt> robotsTxtCache = new ConcurrentHashMap<>();
+    // Cache for robots.txt rules
+    private final Map<String, RobotsTxtAdapter> robotsTxtCache = new ConcurrentHashMap<>();
 
-    // Cache for sitemaps to avoid fetching them multiple times
+    // Cache for sitemaps
     private final Map<String, Set<String>> sitemapCache = new ConcurrentHashMap<>();
 
-    // Default crawl delay in milliseconds (1 second)
+    // Default crawl delay in milliseconds
     private static final long DEFAULT_CRAWL_DELAY = 1000;
 
+    // Flag to track if robots.txt is malformed or couldn't be retrieved
+    @Getter
+    private boolean robotsTxtMalformed = false;
+
+    // Flag to track if robots.txt has been initialized
+    private boolean initialized = false;
+
+    // Current domain and scheme
+    private String currentDomain;
+    private String currentScheme;
+
     /**
-     * Fetches and parses the robots.txt file for a domain.
+     * Initializes the robots.txt service for a specific domain and scheme.
+     * This method should be called before any other methods to ensure the robots.txt file is fetched only once.
      * 
-     * @param domain The domain to fetch the robots.txt file for
+     * @param domain The domain to initialize for
      * @param scheme The scheme to use (http or https)
-     * @return The parsed robots.txt file
+     * @return True if initialization was successful, false otherwise
      */
-    public RobotsTxt getRobotsTxt(String domain, String scheme) {
+    public boolean initialize(String domain, String scheme) {
+        // Reset the malformed flag
+        robotsTxtMalformed = false;
+
+        // Store the current domain and scheme
+        this.currentDomain = domain;
+        this.currentScheme = scheme;
+
         try {
             // Check if we already have the robots.txt file in the cache
             if (robotsTxtCache.containsKey(domain)) {
-                return robotsTxtCache.get(domain);
+                initialized = true;
+                return true;
             }
 
             // Construct the robots.txt URL using the provided scheme
             String robotsUrl = scheme + "://" + domain + "/robots.txt";
 
-            log.info("Fetching robots.txt from {}", robotsUrl);
+            log.info("Initializing robots.txt from {}", robotsUrl);
 
             try {
                 // Fetch the robots.txt file
-                Document doc = jsoupService.getContentTypeAgnosticDocument(robotsUrl);
+                String content = jsoupService.getContentTypeAgnosticDocument(robotsUrl).body().text();
 
-                // Parse the robots.txt file
-                RobotsTxt robotsTxt = new RobotsTxt(doc.body().text());
+                // Parse with Crawler-Commons
+                RobotsTxtAdapter adapter = new RobotsTxtAdapter(content, config.getUserAgent());
+                robotsTxtCache.put(domain, adapter);
 
-                // Cache the parsed robots.txt file
-                robotsTxtCache.put(domain, robotsTxt);
+                // Process sitemaps
+                processSitemaps(domain, adapter.getSitemaps());
 
-                // Process sitemaps if any
-                processSitemaps(domain, robotsTxt.getSitemaps());
-
-                return robotsTxt;
+                initialized = true;
+                return true;
             } catch (IOException e) {
                 log.warn("Failed to fetch robots.txt from {}: {}", robotsUrl, e.getMessage());
 
-                // If we can't fetch the robots.txt file, create an empty one (allowing all URLs)
-                RobotsTxt emptyRobotsTxt = new RobotsTxt("");
-                robotsTxtCache.put(domain, emptyRobotsTxt);
+                // Create empty rules if robots.txt can't be fetched
+                RobotsTxtAdapter emptyAdapter = new RobotsTxtAdapter("", config.getUserAgent());
+                robotsTxtCache.put(domain, emptyAdapter);
 
-                return emptyRobotsTxt;
+                // Mark as malformed but still initialized
+                robotsTxtMalformed = true;
+                initialized = true;
+                return false;
             }
         } catch (Exception e) {
             log.error("Error processing robots.txt for domain {}: {}", domain, e.getMessage());
-            return new RobotsTxt(""); // Return an empty robots.txt file (allowing all URLs)
+
+            // Create empty rules if robots.txt can't be processed
+            robotsTxtCache.put(domain, new RobotsTxtAdapter("", config.getUserAgent()));
+
+            // Mark as malformed but still initialized
+            robotsTxtMalformed = true;
+            initialized = true;
+            return false;
         }
+    }
+
+    /**
+     * Fetches and parses the robots.txt file for a domain.
+     * This method is protected and should only be used internally or for testing.
+     * 
+     * @param domain The domain to fetch the robots.txt file for
+     * @param scheme The scheme to use (http or https)
+     * @return The parsed robots.txt file
+     */
+    protected RobotsTxtAdapter getRobotsTxt(String domain, String scheme) {
+        // If not initialized or different domain/scheme, initialize first
+        if (!initialized || !domain.equals(currentDomain) || !scheme.equals(currentScheme)) {
+            initialize(domain, scheme);
+        }
+
+        // Return the cached robots.txt
+        return robotsTxtCache.getOrDefault(domain, new RobotsTxtAdapter("", config.getUserAgent()));
     }
 
     /**
@@ -98,38 +147,45 @@ public class RobotsTxtService {
         }
 
         Set<String> urls = new HashSet<>();
+        SiteMapParser siteMapParser = new SiteMapParser();
 
         for (String sitemapUrl : sitemapUrls) {
             try {
                 log.info("Fetching sitemap from {}", sitemapUrl);
 
                 // Fetch the sitemap
-                Document doc = jsoupService.getContentTypeAgnosticDocument(sitemapUrl);
+                byte[] content = jsoupService.getContentTypeAgnosticDocument(sitemapUrl)
+                    .toString().getBytes();
 
-                // Parse the sitemap based on its type
-                if (sitemapUrl.endsWith(".xml") || doc.toString().contains("<urlset")) {
-                    // XML sitemap
-                    Elements locElements = doc.select("url > loc");
-                    for (Element locElement : locElements) {
-                        urls.add(locElement.text());
-                    }
-                } else if (sitemapUrl.endsWith(".txt")) {
-                    // Text sitemap
-                    for (String line : doc.body().text().split("\\r?\\n")) {
-                        line = line.trim();
-                        if (!line.isEmpty()) {
-                            urls.add(line);
+                // Parse with Crawler-Commons
+                URL url = new URL(sitemapUrl);
+                AbstractSiteMap abstractSiteMap = siteMapParser.parseSiteMap(content, url);
+
+                // Handle different types of sitemaps
+                if (abstractSiteMap.isIndex()) {
+                    // It's a sitemap index, process each sitemap in the index
+                    SiteMapIndex siteMapIndex = (SiteMapIndex) abstractSiteMap;
+                    for (AbstractSiteMap subSiteMap : siteMapIndex.getSitemaps()) {
+                        if (subSiteMap instanceof SiteMap actualSiteMap) {
+                            for (SiteMapURL siteMapUrl : actualSiteMap.getSiteMapUrls()) {
+                                urls.add(siteMapUrl.getUrl().toString());
+                            }
                         }
+                    }
+                } else if (abstractSiteMap instanceof SiteMap siteMap) {
+                    // It's a regular sitemap
+                    for (SiteMapURL siteMapUrl : siteMap.getSiteMapUrls()) {
+                        urls.add(siteMapUrl.getUrl().toString());
                     }
                 }
 
                 log.info("Found {} URLs in sitemap {}", urls.size(), sitemapUrl);
-            } catch (IOException e) {
-                log.warn("Failed to fetch sitemap from {}: {}", sitemapUrl, e.getMessage());
+            } catch (Exception e) {
+                log.warn("Failed to fetch/parse sitemap from {}: {}", sitemapUrl, e.getMessage());
             }
         }
 
-        // Cache the sitemap URLs
+        // Cache the results
         if (!urls.isEmpty()) {
             sitemapCache.put(domain, urls);
         }
@@ -147,53 +203,87 @@ public class RobotsTxtService {
 
     /**
      * Checks if a URL is allowed to be crawled according to the robots.txt rules.
+     * If robots.txt is malformed or couldn't be retrieved, all URLs are allowed.
      * 
      * @param url The URL to check
-     * @param robotsTxt The robots.txt for the domain
+     * @param domain The domain of the URL
+     * @param scheme The scheme of the URL (http or https)
      * @return True if the URL is allowed to be crawled, false otherwise
      */
-    public boolean isAllowedByRobotsTxt(String url, RobotsTxt robotsTxt) {
+    public boolean isAllowed(String url, String domain, String scheme) {
+        // If not initialized or different domain/scheme, initialize first
+        if (!initialized || !domain.equals(currentDomain) || !scheme.equals(currentScheme)) {
+            initialize(domain, scheme);
+        }
+
+        // If robots.txt is malformed, allow all URLs
+        if (robotsTxtMalformed) {
+            log.debug("Robots.txt is malformed or couldn't be retrieved, allowing URL: {}", url);
+            return true;
+        }
+
         try {
-            URI uri = new URI(url);
-
-            // Get the path from the URL
-            String path = uri.getPath();
-            if (path.isEmpty()) {
-                path = "/";
-            }
-
-            // Check if the path is allowed
-            boolean allowed = robotsTxt.isAllowed(path, config.getUserAgent());
-
-            if (!allowed) {
-                log.info("URL {} is disallowed by robots.txt", url);
-            }
-
-            return allowed;
-        } catch (URISyntaxException e) {
-            log.error("Invalid URL format: {}", url);
-            return false;
+            RobotsTxtAdapter robotsTxt = getRobotsTxt(domain, scheme);
+            return robotsTxt.isAllowed(url);
+        } catch (Exception e) {
+            log.error("Error checking if URL {} is allowed: {}", url, e.getMessage());
+            // If there's an error, allow the URL to be crawled
+            return true;
         }
     }
 
     /**
      * Respects the crawl delay specified in the robots.txt file.
+     * If robots.txt is malformed or couldn't be retrieved, uses the default crawl delay.
      * 
      * @param domain The domain to respect the crawl delay for
-     * @param robotsTxt The robots.txt for the domain
+     * @param scheme The scheme of the URL (http or https)
      */
-    public void respectCrawlDelay(String domain, RobotsTxt robotsTxt) {
-        try {
-            // Get the crawl delay
-            long crawlDelay = robotsTxt.getCrawlDelay(config.getUserAgent(), DEFAULT_CRAWL_DELAY);
+    public void respectCrawlDelay(String domain, String scheme) {
+        // If not initialized or different domain/scheme, initialize first
+        if (!initialized || !domain.equals(currentDomain) || !scheme.equals(currentScheme)) {
+            initialize(domain, scheme);
+        }
 
-            // Sleep for the crawl delay
-            if (crawlDelay > 0) {
-                log.debug("Respecting crawl delay of {} ms for domain {}", crawlDelay, domain);
-                Thread.sleep(crawlDelay);
+        try {
+            long crawlDelay = DEFAULT_CRAWL_DELAY;
+
+            // If robots.txt is not malformed, get the crawl delay from it
+            if (!robotsTxtMalformed) {
+                RobotsTxtAdapter robotsTxt = getRobotsTxt(domain, scheme);
+                crawlDelay = robotsTxt.getCrawlDelay();
+                if (crawlDelay <= 0) {
+                    crawlDelay = DEFAULT_CRAWL_DELAY;
+                }
+            } else {
+                log.debug("Robots.txt is malformed or couldn't be retrieved, using default crawl delay");
             }
+
+            log.debug("Respecting crawl delay of {} ms for domain {}", crawlDelay, domain);
+            Thread.sleep(crawlDelay);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }
+
+    /**
+     * Checks if a URL is allowed to be crawled according to the robots.txt rules.
+     * This method is deprecated and will be removed in a future release.
+     * Use {@link #isAllowed(String, String, String)} instead.
+     * 
+     * @param url The URL to check
+     * @param robotsTxt The robots.txt for the domain
+     * @return True if the URL is allowed to be crawled, false otherwise
+     * @deprecated Use {@link #isAllowed(String, String, String)} instead
+     */
+    @Deprecated
+    public boolean isAllowedByRobotsTxt(String url, RobotsTxtAdapter robotsTxt) {
+        try {
+            return robotsTxt.isAllowed(url);
+        } catch (Exception e) {
+            log.error("Error checking if URL {} is allowed: {}", url, e.getMessage());
+            return false;
+        }
+    }
+
 }

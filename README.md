@@ -1,72 +1,40 @@
 # Black Widow
 
-Black Widow is a web scraping application that extracts links from web pages. It focuses on finding links that belong to the same domain as the target URL and displays them in a hierarchical structure.
+Black Widow is a simple web scraping application built with Spring Boot that extracts links from web pages. It finds links that belong to the same domain as the target URL and displays them in a hierarchical structure.
 
-## Features
+## What It Does
 
-- Extract all links from a web page that belong to the same domain
-- Display results as a hierarchical tree structure
-- Filter out external links automatically
-- Handle subdomains correctly
-- Respect robots.txt rules (disallow directives, crawl-delay)
-- Utilize sitemap.xml for additional URL discovery
-- Validate URLs before processing
-- Support for both HTTP and HTTPS protocols
+- Extracts links from web pages that belong to the same domain
+- Respects robots.txt rules and sitemap.xml
+- Displays results as a tree structure
+- Works with both HTTP and HTTPS
 
 ## Requirements
 
 - Java 21 or higher
 - Maven 3.6 or higher
 
-## Installation
+## Quick Start
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/black-widow.git
-   cd black-widow
-   ```
-
-2. Build the application with Maven:
+1. Build the application:
    ```
    mvn clean package
    ```
 
-This will create a JAR file in the `target` directory.
+2. Run the application:
+   ```
+   java -jar target/black-widow-0.0.1-SNAPSHOT.jar https://example.com
+   ```
 
 ## Usage
-
-Run the application using the following command:
 
 ```
 java -jar target/black-widow-0.0.1-SNAPSHOT.jar <url>
 ```
 
-### Parameters:
+Where `<url>` is the website you want to scrape (must start with http:// or https://).
 
-- `<url>` (required): The URL to scrape (e.g., https://example.com)
-  - Must be a valid URL starting with http:// or https://
-  - Must contain a valid host name
-
-### Examples:
-
-1. Scrape a page with HTTP:
-   ```
-   java -jar target/black-widow-0.0.1-SNAPSHOT.jar http://example.com
-   ```
-
-2. Scrape a page with HTTPS:
-   ```
-   java -jar target/black-widow-0.0.1-SNAPSHOT.jar https://example.com
-   ```
-
-3. Scrape a specific page:
-   ```
-   java -jar target/black-widow-0.0.1-SNAPSHOT.jar https://example.com/about.html
-   ```
-
-### Output:
-
-The application outputs a tree structure showing all the links found during scraping:
+### Example Output
 
 ```
 Scraping https://example.com...
@@ -76,43 +44,47 @@ Results:
   - https://example.com/about.html
   - https://example.com/products.html
   - https://example.com/contact.html
-  - https://example.com/blog.html
-  - https://example.com/services.html
+```
+
+## Configuration
+
+You can configure the application by modifying the `application.yaml` file:
+
+```yaml
+scraper:
+  user-agent: BlackWidow/1.0
+  timeout: 10000
+  follow-redirects: true
 ```
 
 ## How It Works
 
-Black Widow uses JSoup to parse HTML content and extract links. For each page:
+Black Widow uses a combination of modern libraries and techniques to efficiently scrape web pages:
 
-1. Validates the URL format to ensure it's properly formed
-2. Extracts the domain and scheme (HTTP/HTTPS) from the URL
-3. Checks the robots.txt file to ensure the URL is allowed to be crawled
-4. Respects the crawl-delay directive specified in robots.txt
-5. Connects to the URL and downloads the HTML content
-6. Parses the HTML to extract all links (`<a href>` tags)
-7. Filters the links to include only those from the same domain and allowed by robots.txt
-8. If available, uses sitemap.xml to discover additional URLs
-9. Builds a hierarchical tree of all links discovered
+1. **URL Validation**: The application first validates the input URL using Spring's `UriComponentsBuilder`, ensuring it's properly formatted with a valid scheme and host.
 
-The application handles various edge cases:
-- Properly extracts domains from URLs with subdomains
-- Handles relative and absolute URLs correctly
-- Caches robots.txt and sitemap data to avoid redundant requests
-- Gracefully handles 403 Forbidden errors and other HTTP errors
-- Supports both HTTP and HTTPS protocols
+2. **Robots.txt Handling**: Black Widow uses the industry-standard Crawler-Commons library to parse and respect robots.txt rules:
+   - Fetches and parses robots.txt once per domain
+   - Respects disallow directives to avoid crawling restricted areas
+   - Honors crawl-delay directives to avoid overloading servers
+   - Gracefully handles missing or malformed robots.txt files
 
-## Project Structure
+3. **Link Extraction**: Using JSoup, the application:
+   - Parses HTML content to extract all links
+   - Filters links to include only those from the same domain
+   - Checks each link against robots.txt rules
+   - Adds relevant URLs from sitemaps to the results
 
-- `BlackWidowApplication.java`: Main application entry point and command-line interface
-- `WebScraper.java`: Core service that handles the web scraping logic
-- `RobotsTxtService.java`: Service for handling robots.txt parsing and caching
-- `JsoupService.java`: Service for centralizing all Jsoup operations
-- `ScraperConfig.java`: Configuration properties for the web scraper
-- `LinkUtils.java`: Utility for extracting links from web pages
-- `DomainUtils.java`: Utility for domain-related operations
-- `RobotsTxt.java`: Model for representing a parsed robots.txt file
-- `ScrapedPage.java`: Model for representing a scraped web page and its links
-- Test resources: Sample HTML files for testing the scraper
+4. **Error Handling**: The application is designed to fail gracefully:
+   - Provides clear error messages for invalid URLs
+   - Continues processing even if robots.txt can't be retrieved
+   - Logs warnings and errors for troubleshooting
+
+5. **Performance Optimization**:
+   - Caches robots.txt and sitemap data to avoid redundant requests
+   - Uses efficient data structures for storing and processing links
+
+This architecture ensures that Black Widow is both powerful and respectful of website owners' preferences.
 
 ## License
 
