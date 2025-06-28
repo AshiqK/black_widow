@@ -266,24 +266,4 @@ public class RobotsTxtService {
         }
     }
 
-    /**
-     * Checks if a URL is allowed to be crawled according to the robots.txt rules.
-     * This method is deprecated and will be removed in a future release.
-     * Use {@link #isAllowed(String, String, String)} instead.
-     * 
-     * @param url The URL to check
-     * @param robotsTxt The robots.txt for the domain
-     * @return True if the URL is allowed to be crawled, false otherwise
-     * @deprecated Use {@link #isAllowed(String, String, String)} instead
-     */
-    @Deprecated
-    public boolean isAllowedByRobotsTxt(String url, RobotsTxtAdapter robotsTxt) {
-        try {
-            return robotsTxt.isAllowed(url);
-        } catch (Exception e) {
-            log.error("Error checking if URL {} is allowed: {}", url, e.getMessage());
-            return false;
-        }
-    }
-
 }
