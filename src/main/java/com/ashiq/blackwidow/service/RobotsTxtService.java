@@ -12,7 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.URI;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -155,10 +157,11 @@ public class RobotsTxtService {
 
                 // Fetch the sitemap
                 byte[] content = jsoupService.getContentTypeAgnosticDocument(sitemapUrl)
-                    .toString().getBytes();
+                    .toString().getBytes(StandardCharsets.UTF_8);
 
                 // Parse with Crawler-Commons
-                URL url = new URL(sitemapUrl);
+                URI uri = new URI(sitemapUrl);
+                URL url = uri.toURL();
                 AbstractSiteMap abstractSiteMap = siteMapParser.parseSiteMap(content, url);
 
                 // Handle different types of sitemaps
