@@ -71,4 +71,27 @@ public class JsoupService {
             throw e;
         }
     }
+
+    /**
+     * Gets the raw content of a URL as a string, preserving all formatting.
+     * This is useful for files like robots.txt where formatting is important.
+     *
+     * @param url The URL to get the content from
+     * @return The raw content as a string
+     * @throws IOException If there's an error connecting to or parsing the URL
+     */
+    public String getRawContent(String url) throws IOException {
+        try {
+            return Jsoup.connect(url)
+                    .userAgent(config.getUserAgent())
+                    .timeout(config.getTimeout())
+                    .followRedirects(config.isFollowRedirects())
+                    .ignoreContentType(true)
+                    .execute()
+                    .body();
+        } catch (IOException e) {
+            log.error("Error connecting to URL: {}", url, e);
+            throw e;
+        }
+    }
 }

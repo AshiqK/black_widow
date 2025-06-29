@@ -9,6 +9,7 @@ import org.jsoup.select.Elements;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,22 +55,32 @@ public class LinkUtils {
                 continue;
             }
 
-            // Check if the link is from the same domain
-            if (DomainUtils.isSameDomain(href, domain)) {
-                // Check if the link is allowed by robots.txt
-                if (isAllowedByRobotsTxt.test(href)) {
-                    result.add(href);
-                } else {
-                    log.debug("Link {} is disallowed by robots.txt. Skipping.", href);
+            try{
+
+                URI hrefUri = new URI(href);
+                // Check if the link is from the same domain
+                if (DomainUtils.isSameDomain(hrefUri, domain)) {
+                    // Check if the link is allowed by robots.txt
+                    if (isAllowedByRobotsTxt.test(href)) {
+                        result.add(href);
+                    } else {
+                        log.debug("Link {} is disallowed by robots.txt. Skipping.", href);
+                    }
                 }
+
+            } catch (URISyntaxException e) {
+                log.warn("Skipping Invalid URL in link: {}", href);
             }
+
+
         }
 
         // Add sitemap URLs if available
         if (sitemapUrls != null && !sitemapUrls.isEmpty()) {
             for (String sitemapUrl : sitemapUrls) {
                 try {
-                    if (DomainUtils.isSameDomain(sitemapUrl, domain) && !result.contains(sitemapUrl)) {
+                    URI sitemapUri = new URI(sitemapUrl);
+                    if (DomainUtils.isSameDomain(sitemapUri, domain) && !result.contains(sitemapUrl)) {
                         // Check if the sitemap URL is allowed by robots.txt
                         if (isAllowedByRobotsTxt.test(sitemapUrl)) {
                             result.add(sitemapUrl);
@@ -78,7 +89,7 @@ public class LinkUtils {
                         }
                     }
                 } catch (URISyntaxException e) {
-                    log.warn("Invalid URL in sitemap: {}", sitemapUrl);
+                    log.warn("Skipping Invalid URL in sitemap: {}", sitemapUrl);
                 }
             }
         }

@@ -1,7 +1,8 @@
 package com.ashiq.blackwidow;
 
-import com.ashiq.blackwidow.model.ScrapedPage;
+import com.ashiq.blackwidow.payload.ScrapedPage;
 import com.ashiq.blackwidow.service.WebScraper;
+import com.ashiq.blackwidow.validator.InputProcessor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -9,6 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.List;
 
 @Slf4j
@@ -20,26 +22,32 @@ public class BlackWidowApplication {
 	}
 
 	@Bean
-	public CommandLineRunner commandLineRunner(WebScraper webScraper) {
+	public CommandLineRunner commandLineRunner(WebScraper webScraper, InputProcessor inputProcessor) {
 		return args -> {
-			// Validate arguments
+			String url;
+
 			if (args.length < 1) {
 				log.info("Usage: java -jar black-widow.jar <url>");
 				log.info("  <url>   - The URL to scrape");
 				return;
 			}
 
-			// Parse arguments
-			String url = args[0];
+			url = args[0];
+
+			URI uri = inputProcessor.processUrl(url);
+			if(uri == null) {
+				log.error("There was a problem processing the URL: {}", url);
+				return;
+			}
 
 			try {
 				// Perform the scraping
 				log.info("Scraping {}...", url);
-				ScrapedPage result = webScraper.scrape(url);
+				ScrapedPage scrapedPage = webScraper.scrape(uri);
 
 				// Print the results
 				log.info("\nResults:");
-				printResults(result, 0);
+				printResults(scrapedPage, 0);
 
 			} catch (IOException e) {
 				log.error("Error connecting to or parsing the URL: {}", e.getMessage());

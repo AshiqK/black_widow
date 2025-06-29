@@ -30,6 +30,7 @@
 		<java.version>21</java.version>
 		<jsoup.version>1.17.2</jsoup.version>
 		<crawler-commons.version>1.4</crawler-commons.version>
+		<guava.version>33.0.0-jre</guava.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -67,6 +68,13 @@
 			<groupId>com.github.crawler-commons</groupId>
 			<artifactId>crawler-commons</artifactId>
 			<version>${crawler-commons.version}</version>
+		</dependency>
+
+		<!-- Guava for domain name handling -->
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>${guava.version}</version>
 		</dependency>
 	</dependencies>
 

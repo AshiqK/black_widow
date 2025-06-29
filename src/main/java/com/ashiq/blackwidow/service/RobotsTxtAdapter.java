@@ -5,6 +5,7 @@ import crawlercommons.robots.SimpleRobotRulesParser;
 import lombok.Getter;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -25,19 +26,12 @@ public class RobotsTxtAdapter {
     public RobotsTxtAdapter(String content, String userAgent) {
         SimpleRobotRulesParser parser = new SimpleRobotRulesParser();
 
-        // Since we can't find a non-deprecated replacement for parseContent,
-        // we'll continue to use it with the deprecation warning suppressed.
-        // In a future update, when the correct replacement method is identified,
-        // this code should be updated to use that method.
-        @SuppressWarnings("deprecation")
-        BaseRobotRules rules = parser.parseContent(
-            "robots.txt", 
-            content.getBytes(StandardCharsets.UTF_8), 
-            "text/plain", 
-            userAgent
+        this.robotRules = parser.parseContent(
+            "robots.txt",
+            content.getBytes(StandardCharsets.UTF_8),
+            "text/plain",
+                Collections.singletonList(userAgent)
         );
-
-        this.robotRules = rules;
         this.sitemaps = robotRules.getSitemaps();
     }
 
